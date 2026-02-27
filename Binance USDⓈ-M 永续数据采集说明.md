@@ -10,6 +10,57 @@
 
 ## 1. 构建采集器
 
+  1. 在云服务器上安装 Rust
+
+  curl --proto '=https' --tlsv1.2 -sSf <https://sh.rustup.rs> | sh
+  source $HOME/.cargo/env
+  rustc --version  # 验证安装
+
+  1. 上传项目代码到服务器
+
+  从本地上传到服务器（比如用 scp）：
+
+## 本地执行
+
+  scp -r ~/Documents/yuting/hftbacktest <user>@<server_ip>:~/hftbacktest
+
+  或者直接在服务器上 clone：
+
+## 服务器上执行
+
+  git clone <repo_url>
+  cd hftbacktest
+
+  1. 在服务器上编译 collector
+
+  cd hftbacktest
+  cargo build -p collector --release
+
+  （第一次会比较慢，几分钟到十几分钟）
+
+  1. 启动采集
+
+  mkdir -p ./data
+  ./target/release/collector ./data binancefuturesum ETHUSDC
+
+  ---
+  或者：交叉编译（高级，可跳过）
+
+  如果不想上服务器装 Rust，可以在本地 Mac 上交叉编译为 Linux 二进制：
+
+## 本地执行(交叉编译)
+
+  rustup target add x86_64-unknown-linux-gnu
+  cargo build -p collector --release --target x86_64-unknown-linux-gnu
+
+## 上传二进制到服务器
+
+  scp target/x86_64-unknown-linux-gnu/release/collector <user>@<server_ip>:~/
+
+  但这比较麻烦，直接在服务器上编译反而更简单。
+
+## 直接在服务器上编译
+
 在仓库根目录执行：
 
 ```bash
@@ -24,6 +75,10 @@ cargo build -p collector --release
 
 ```bash
 ./target/release/collector ./data binancefuturesum ETHUSDC
+```
+
+```bash
+nohup ./target/release/collector ./data binancefuturesum ETHUSDC > collector.log 2>&1 &
 ```
 
 参数含义：
