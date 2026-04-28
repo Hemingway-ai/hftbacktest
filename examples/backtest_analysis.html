@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OBI Market Making - Backtest Analysis</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+:root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22262f;
+    --border: #2a2e3a;
+    --text: #d1d4dc;
+    --text2: #9ca3af;
+    --green: #26a69a;
+    --red: #ef5350;
+    --blue: #42a5f5;
+    --orange: #ff9800;
+    --radius: 8px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+}
+
+/* Header */
+.header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.header h1 { font-size: 1.2rem; white-space: nowrap; color: #fff; }
+.header .subtitle { font-size: 0.8rem; color: var(--text2); }
+
+/* Buttons */
+.btn {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+.btn:hover { background: #2e3344; border-color: #4a4f60; }
+.btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+.btn-red { background: #c62828; border-color: #c62828; color: #fff; }
+.btn-red:hover { background: #d32f2f; }
+.btn-green { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+
+/* File drop zone */
+.drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    margin: 40px auto;
+    max-width: 500px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--blue);
+    background: rgba(66,165,245,0.05);
+}
+.drop-zone h2 { margin-bottom: 8px; }
+.drop-zone p { color: var(--text2); font-size: 0.9rem; }
+
+/* Stats bar */
+.stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 16px 20px;
+    flex-wrap: wrap;
+}
+.stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    min-width: 140px;
+    flex: 1;
+}
+.stat-card .label { font-size: 0.75rem; color: var(--text2); text-transform: uppercase; }
+.stat-card .value { font-size: 1.3rem; font-weight: 600; }
+.stat-card .value.pos { color: var(--green); }
+.stat-card .value.neg { color: var(--red); }
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    padding: 0 20px;
+    background: var(--surface);
+}
+.tab-btn {
+    background: none;
+    border: none;
+    color: var(--text2);
+    padding: 12px 24px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* Tab content */
+.tab-content { display: none; padding: 20px; }
+.tab-content.active { display: block; }
+
+/* Chart containers */
+.chart-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.chart-box .chart-title {
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    color: #fff;
+}
+
+/* Filter row */
+.filter-row {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.filter-row label { font-size: 0.8rem; color: var(--text2); }
+.filter-row input, .filter-row select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+}
+.filter-row input[type="number"] { width: 90px; }
+.filter-row input[type="datetime-local"] { width: 220px; }
+
+/* Table */
+.table-wrap {
+    overflow-x: auto;
+    max-height: 600px;
+    overflow-y: auto;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+    background: var(--surface2);
+    color: var(--text2);
+    padding: 8px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+}
+th:hover { color: #fff; }
+th:first-child, td:first-child { text-align: center; }
+td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid rgba(42,46,58,0.5);
+    white-space: nowrap;
+}
+tr:hover td { background: rgba(66,165,245,0.05); }
+tr.losing td { background: rgba(239,83,80,0.06); }
+tr.losing:hover td { background: rgba(239,83,80,0.12); }
+tr.winning td { background: rgba(38,166,154,0.04); }
+tr.winning:hover td { background: rgba(38,166,154,0.1); }
+.pnl-neg { color: var(--red); }
+.pnl-pos { color: var(--green); }
+
+/* Loading overlay */
+.loading {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15,17,23,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+}
+.loading.hidden { display: none; }
+.spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    z-index: 999;
+    animation: fadeIn 0.3s;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .header { flex-direction: column; align-items: flex-start; }
+    .stats-bar { flex-direction: column; }
+    .tabs { overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+
+<div class="header" id="header">
+    <div>
+        <h1>OBI Market Making — Backtest Analysis</h1>
+        <div class="subtitle">订单簿失衡做市策略 · 回测可视化分析</div>
+    </div>
+    <label class="btn" style="cursor:pointer;">
+        📂 加载数据文件
+        <input type="file" id="fileInput" accept=".json" style="display:none">
+    </label>
+    <span id="fileName" style="color:var(--text2);font-size:0.8rem;"></span>
+    <span style="flex:1;"></span>
+    <span style="color:var(--text2);font-size:0.8rem;" id="dataInfo"></span>
+</div>
+
+<!-- File drop zone (shown when no data) -->
+<div id="dropZone" class="drop-zone">
+    <h2>📊 拖拽 JSON 数据文件到此处</h2>
+    <p>或点击上方「加载数据文件」按钮选择 obi_detailed_output.json</p>
+    <p style="margin-top:8px;font-size:0.78rem;">运行 obi_detailed_strategy.py 生成数据文件</p>
+</div>
+
+<!-- Main content (shown after data loaded) -->
+<div id="mainContent" style="display:none;">
+
+    <!-- Stats bar -->
+    <div class="stats-bar" id="statsBar"></div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('overview')">📈 概览 Overview</button>
+        <button class="tab-btn" onclick="switchTab('trades')">📋 交易分析 Trades</button>
+        <button class="tab-btn" onclick="switchTab('detail')">🔍 交易详情 Detail</button>
+    </div>
+
+    <!-- Tab: Overview -->
+    <div class="tab-content active" id="tab-overview">
+        <div class="filter-row">
+            <label>时间范围:</label>
+            <input type="datetime-local" id="timeFrom" step="1">
+            <span style="color:var(--text2)">—</span>
+            <input type="datetime-local" id="timeTo" step="1">
+            <button class="btn btn-sm" onclick="applyTimeRange()">应用</button>
+            <button class="btn btn-sm" onclick="resetTimeRange()">重置</button>
+            <span class="btn btn-sm" onclick="quickRange(300)">5分钟</span>
+            <span class="btn btn-sm" onclick="quickRange(900)">15分钟</span>
+            <span class="btn btn-sm" onclick="quickRange(3600)">1小时</span>
+            <span class="btn btn-sm" onclick="quickRange(14400)">4小时</span>
+            <span class="btn btn-sm" onclick="resetTimeRange()">全天</span>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">累计盈亏 Cumulative PnL (细节视图)</div>
+            <div id="chartPnL" style="height:350px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">原版回测曲线 Classic Backtest Equity Curve</div>
+            <div id="chartClassic" style="height:350px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">仓位变化 Position</div>
+            <div id="chartPosition" style="height:200px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">Alpha 信号 & 价差 Spread</div>
+            <div id="chartAlpha" style="height:300px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">波动率 Volatility（滚动60秒标准差）</div>
+            <div id="chartVol" style="height:250px;"></div>
+        </div>
+    </div>
+
+    <!-- Tab: Trades -->
+    <div class="tab-content" id="tab-trades">
+        <div class="filter-row">
+            <label>筛选:</label>
+            <select id="tradeFilter">
+                <option value="all">全部成交</option>
+                <option value="losing">仅亏损 (PnL < 0)</option>
+                <option value="winning">仅盈利 (PnL ≥ 0)</option>
+            </select>
+            <label>最少亏损:</label>
+            <input type="number" id="minLoss" value="0" step="0.1" style="width:100px;">
+            <label>时间:</label>
+            <input type="datetime-local" id="tradeTimeFrom" step="1">
+            <span style="color:var(--text2)">—</span>
+            <input type="datetime-local" id="tradeTimeTo" step="1">
+            <button class="btn btn-sm" onclick="applyTradeFilter()">应用</button>
+            <button class="btn btn-sm" onclick="resetTradeFilter()">重置</button>
+            <span style="flex:1;"></span>
+            <span style="color:var(--text2);font-size:0.8rem;" id="tradeCount"></span>
+        </div>
+        <div class="table-wrap" id="tradeTableWrap">
+            <table id="tradeTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTrades('time')">时间 ↕</th>
+                        <th onclick="sortTrades('side')">方向</th>
+                        <th onclick="sortTrades('ep')">成交价</th>
+                        <th onclick="sortTrades('eq')">数量</th>
+                        <th onclick="sortTrades('mid')">中间价</th>
+                        <th onclick="sortTrades('spr')">价差</th>
+                        <th onclick="sortTrades('alpha')">Alpha</th>
+                        <th onclick="sortTrades('pnl')">PnL</th>
+                        <th onclick="sortTrades('cum_pnl')">累计PnL</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: Detail -->
+    <div class="tab-content" id="tab-detail">
+        <div class="filter-row">
+            <label>分析时间:</label>
+            <input type="datetime-local" id="detailTime" step="1">
+            <button class="btn btn-sm" onclick="updateDetail()">查看</button>
+            <span style="color:var(--text2);font-size:0.8rem;">展示选中时间前后 ±60 秒的详细数据</span>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">秒级 K 线图 1-Second Candlestick</div>
+            <div id="chartKline" style="height:450px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">中间价 & 价差 Mid Price & Spread</div>
+            <div id="chartDetailMid" style="height:250px;"></div>
+        </div>
+        <div class="chart-box">
+            <div class="chart-title">Alpha & 波动率</div>
+            <div id="chartDetailAlpha" style="height:250px;"></div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div class="chart-box" style="flex:1;min-width:300px;">
+                <div class="chart-title">附近成交记录</div>
+                <div class="table-wrap" style="max-height:300px;" id="detailTradeTable"></div>
+            </div>
+            <div class="chart-box" style="flex:1;min-width:300px;">
+                <div class="chart-title">订单簿快照 (选中时刻)</div>
+                <div id="detailSnapshot" style="padding:12px;font-size:0.85rem;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="loading hidden" id="loading">
+    <div class="spinner"></div>
+</div>
+
+<script>
+// ============================================================================
+// Global State
+// ============================================================================
+let DATA = null;           // raw parsed JSON
+let snapshots = [];        // [{ts_ms, mid, bid, ask, spr, pos, bal, fee, alpha, imba, bp, ap}, ...]
+let fills = [];            // [{ts_ms, ets_ms, side, ep, eq, op, mid, spr, alpha, pos, bal, pnl, cum_pnl}, ...]
+let klines = [];           // [{ts_ms, o, h, l, c, v, bv, sv}, ...]
+let recorder = [];         // [{ts_ms, px, pos, bal, fee, trades, vol, value}, ...]
+let recorder5m = [];       // 5-minute resampled (matches stats.plot())
+let meta = null;
+
+let timeRange = { from: null, to: null };        // in ms
+let tradeFilterState = { type: 'all', minLoss: 0, from: null, to: null };
+let tradeSort = { field: 'time', asc: true };
+let selectedTradeIdx = null;
+let tradePage = 0;
+let tradePageSize = 200;
+
+// ============================================================================
+// File Loading
+// ============================================================================
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const mainContent = document.getElementById('mainContent');
+const loadingEl = document.getElementById('loading');
+
+fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file) {
+    showLoading(true);
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const raw = JSON.parse(e.target.result);
+            processData(raw);
+            document.getElementById('fileName').textContent = file.name;
+            const sz = file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+' MB' : (file.size/1024).toFixed(0)+' KB';
+            showToast('已加载: ' + file.name + ' (' + sz + ')');
+        } catch (err) {
+            showToast('JSON 解析失败: ' + err.message);
+            console.error(err);
+        }
+        showLoading(false);
+    };
+    reader.onerror = () => { showLoading(false); showToast('文件读取失败'); };
+    reader.readAsText(file);
+}
+
+function processData(raw) {
+    meta = raw.meta;
+    snapshots = raw.snapshots.map(s => ({ ...s, ts_ms: s.ts / 1_000_000 }));
+    fills = raw.fills.map(f => ({ ...f, ts_ms: f.ts / 1_000_000, ets_ms: f.ets / 1_000_000 }));
+    klines = raw.klines.map(k => ({ ...k, ts_ms: k.ts / 1_000_000 }));
+    recorder = (raw.recorder || []).map(r => ({ ...r, ts_ms: r.ts / 1_000_000 }));
+    recorder5m = (raw.recorder_5m || []).map(r => ({ ...r, ts_ms: r.ts / 1_000_000 }));
+
+    // Derive volatility from snapshots (rolling 60-period std of mid returns)
+    computeVolatility(60);
+
+    // Set default time range
+    if (snapshots.length > 0) {
+        timeRange.from = snapshots[0].ts_ms;
+        timeRange.to = snapshots[snapshots.length - 1].ts_ms;
+    }
+
+    document.getElementById('dataInfo').textContent =
+        `${meta.asset} | ${snapshots.length.toLocaleString()} snapshots | ${fills.length.toLocaleString()} fills | ${klines.length.toLocaleString()} klines`;
+
+    dropZone.style.display = 'none';
+    mainContent.style.display = 'block';
+
+    initTimeInputs();
+    renderAll();
+}
+
+function computeVolatility(windowSec) {
+    // Rolling standard deviation of mid-price log returns
+    let sum = 0, sumSq = 0, count = 0;
+    const n = snapshots.length;
+    for (let i = 1; i < n; i++) {
+        const ret = Math.log(snapshots[i].mid / snapshots[i - 1].mid);
+        sum += ret;
+        sumSq += ret * ret;
+        count++;
+        if (count > windowSec) {
+            const oldest = Math.log(snapshots[i - windowSec].mid / snapshots[i - windowSec - 1].mid);
+            sum -= oldest;
+            sumSq -= oldest * oldest;
+            count--;
+        }
+        if (i >= windowSec) {
+            const variance = (sumSq - sum * sum / count) / count;
+            snapshots[i].vol = Math.sqrt(Math.max(0, variance)) * Math.sqrt(86400);
+        } else {
+            snapshots[i].vol = null;
+        }
+    }
+    // First snapshot has no prior price
+    if (n > 0) snapshots[0].vol = null;
+}
+
+// ============================================================================
+// Time Inputs
+// ============================================================================
+function initTimeInputs() {
+    const fmt = ts => new Date(ts).toISOString().slice(0, 19);
+    const from = timeRange.from || snapshots[0].ts_ms;
+    const to = timeRange.to || snapshots[snapshots.length-1].ts_ms;
+    document.getElementById('timeFrom').value = fmt(from);
+    document.getElementById('timeTo').value = fmt(to);
+    document.getElementById('tradeTimeFrom').value = fmt(from);
+    document.getElementById('tradeTimeTo').value = fmt(to);
+    document.getElementById('detailTime').value = fmt(from);
+}
+
+function getTimeRangeFromInputs() {
+    const from = document.getElementById('timeFrom').value;
+    const to = document.getElementById('timeTo').value;
+    return {
+        from: from ? new Date(from).getTime() : null,
+        to: to ? new Date(to).getTime() : null
+    };
+}
+
+function applyTimeRange() {
+    const r = getTimeRangeFromInputs();
+    if (r.from != null) timeRange.from = r.from;
+    if (r.to != null) timeRange.to = r.to;
+    renderOverview();
+}
+
+function resetTimeRange() {
+    if (snapshots.length === 0) return;
+    timeRange.from = snapshots[0].ts_ms;
+    timeRange.to = snapshots[snapshots.length-1].ts_ms;
+    initTimeInputs();
+    renderOverview();
+}
+
+function quickRange(seconds) {
+    const to = timeRange.to || snapshots[snapshots.length-1].ts_ms;
+    const from = to - seconds * 1000;
+    timeRange.from = from;
+    timeRange.to = to;
+    initTimeInputs();
+    renderOverview();
+}
+
+// ============================================================================
+// Filter helpers
+// ============================================================================
+function filterByTime(arr, from, to) {
+    if (from == null && to == null) return arr;
+    return arr.filter(x => {
+        if (from != null && x.ts_ms < from) return false;
+        if (to != null && x.ts_ms > to) return false;
+        return true;
+    });
+}
+
+const filterByTimeRange = (arr) => filterByTime(arr, timeRange.from, timeRange.to);
+
+// ============================================================================
+// Tab switching
+// ============================================================================
+function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.tab-btn[onclick*="${name}"]`).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+
+    if (name === 'overview') renderOverview();
+    else if (name === 'trades') renderTrades();
+    else if (name === 'detail') renderDetail();
+}
+
+// ============================================================================
+// Render: Overview
+// ============================================================================
+function renderOverview() {
+    renderStats();
+    renderPnLChart();
+    renderClassicChart();
+    renderPositionChart();
+    renderAlphaChart();
+    renderVolChart();
+}
+
+function renderStats() {
+    const sf = filterByTimeRange(snapshots);
+    const ff = filterByTimeRange(fills);
+    if (sf.length === 0) return;
+
+    const totalPnl = ff.length > 0 ? ff[ff.length-1].cum_pnl : 0;
+    const winning = ff.filter(f => f.pnl >= 0);
+    const losing = ff.filter(f => f.pnl < 0);
+    const winRate = ff.length > 0 ? (winning.length / ff.length * 100) : 0;
+    const avgSpr = sf.reduce((a, s) => a + s.spr, 0) / sf.length;
+    const validAlpha = sf.filter(s => s.alpha != null && isFinite(s.alpha));
+    const avgAlpha = validAlpha.length > 0 ? validAlpha.reduce((a, s) => a + Math.abs(s.alpha), 0) / validAlpha.length : 0;
+    const maxPos = sf.reduce((a, s) => Math.max(a, Math.abs(s.pos)), 0);
+    const avgVol = sf.filter(s => s.vol != null).reduce((a, s) => a + s.vol, 0) /
+        (sf.filter(s => s.vol != null).length || 1);
+
+    const cards = [
+        { label: '累计 PnL', value: totalPnl.toFixed(2), cls: totalPnl >= 0 ? 'pos' : 'neg' },
+        { label: '总成交笔数', value: ff.length.toLocaleString(), cls: '' },
+        { label: '盈利 / 亏损', value: `${winning.length} / ${losing.length}`, cls: '' },
+        { label: '胜率 Win Rate', value: winRate.toFixed(1) + '%', cls: winRate >= 50 ? 'pos' : 'neg' },
+        { label: '平均价差', value: avgSpr.toFixed(2), cls: '' },
+        { label: 'Avg |Alpha|', value: avgAlpha.toFixed(4), cls: '' },
+        { label: '最大持仓$', value: (maxPos * sf[sf.length-1].mid).toFixed(0), cls: '' },
+        { label: '年均波动率', value: (avgVol*100).toFixed(2) + '%', cls: '' },
+    ];
+
+    document.getElementById('statsBar').innerHTML = cards.map(c =>
+        `<div class="stat-card">
+            <div class="label">${c.label}</div>
+            <div class="value ${c.cls}">${c.value}</div>
+        </div>`
+    ).join('');
+}
+
+function renderPnLChart() {
+    const sf = filterByTimeRange(snapshots);
+    if (sf.length === 0) return;
+
+    // Downsample to 600 points max for performance
+    const step = Math.max(1, Math.floor(sf.length / 600));
+    const x = [], y = [];
+    for (let i = 0; i < sf.length; i += step) {
+        x.push(new Date(sf[i].ts_ms));
+        y.push(sf[i].bal);
+    }
+
+    const trace = {
+        x, y, type: 'scatter', mode: 'lines',
+        line: { color: '#42a5f5', width: 1.5 },
+        fill: 'tozeroy', fillcolor: 'rgba(66,165,245,0.08)',
+        name: 'Balance'
+    };
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 20, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date', rangeslider: { visible: true, thickness: 0.05 } },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Balance' },
+        showlegend: false,
+    };
+
+    Plotly.react('chartPnL', [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+function renderPositionChart() {
+    const sf = filterByTimeRange(snapshots);
+    if (sf.length === 0) return;
+
+    const step = Math.max(1, Math.floor(sf.length / 600));
+    const x = [], y = [];
+    for (let i = 0; i < sf.length; i += step) {
+        x.push(new Date(sf[i].ts_ms));
+        y.push(sf[i].pos);
+    }
+
+    const trace = {
+        x, y, type: 'scatter', mode: 'lines',
+        line: { color: '#ff9800', width: 1.5 },
+        fill: 'tozeroy', fillcolor: 'rgba(255,152,0,0.08)',
+        name: 'Position'
+    };
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 20, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Position (qty)' },
+        showlegend: false,
+    };
+
+    Plotly.react('chartPosition', [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+function renderAlphaChart() {
+    const sf = filterByTimeRange(snapshots);
+    if (sf.length === 0) return;
+
+    const step = Math.max(1, Math.floor(sf.length / 600));
+    const x = [], alpha = [], spr = [];
+    for (let i = 0; i < sf.length; i += step) {
+        x.push(new Date(sf[i].ts_ms));
+        alpha.push(sf[i].alpha);
+        spr.push(sf[i].spr);
+    }
+
+    const traceAlpha = {
+        x, y: alpha, type: 'scatter', mode: 'lines', name: 'Alpha',
+        line: { color: '#42a5f5', width: 1.2 }, yaxis: 'y',
+    };
+    const traceSpr = {
+        x, y: spr, type: 'scatter', mode: 'lines', name: 'Spread',
+        line: { color: '#ce93d8', width: 1.2 }, yaxis: 'y2',
+    };
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 60, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Alpha', side: 'left' },
+        yaxis2: { overlaying: 'y', side: 'right', title: 'Spread', gridcolor: 'transparent' },
+        legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
+    };
+
+    Plotly.react('chartAlpha', [traceAlpha, traceSpr], layout, { responsive: true, displayModeBar: false });
+}
+
+function renderVolChart() {
+    const sf = filterByTimeRange(snapshots).filter(s => s.vol != null);
+    if (sf.length === 0) return;
+
+    const step = Math.max(1, Math.floor(sf.length / 600));
+    const x = [], v = [];
+    for (let i = 0; i < sf.length; i += step) {
+        x.push(new Date(sf[i].ts_ms));
+        v.push(sf[i].vol * 100); // as percentage
+    }
+
+    const trace = {
+        x, y: v, type: 'scatter', mode: 'lines',
+        line: { color: '#ff7043', width: 1.2 },
+        fill: 'tozeroy', fillcolor: 'rgba(255,112,67,0.08)',
+        name: 'Volatility'
+    };
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 20, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Annualized Vol %' },
+        showlegend: false,
+    };
+
+    Plotly.react('chartVol', [trace], layout, { responsive: true, displayModeBar: false });
+}
+
+function renderClassicChart() {
+    if (recorder5m.length === 0) {
+        document.getElementById('chartClassic').innerHTML =
+            '<p style="padding:20px;color:var(--text2);">无经典回测数据。请确保运行了 obi_detailed_strategy.py。</p>';
+        return;
+    }
+
+    const rec = filterByTime(recorder5m, timeRange.from, timeRange.to);
+    if (rec.length === 0) return;
+
+    const x = rec.map(r => new Date(r.ts_ms));
+    // equity = (equity_wo_fee - fee) / book_size * 100  (matches notebook)
+    const bookSize = 2_500_000;
+    const eqWoFee = rec.map(r => r.equity_wo_fee ?? (r.bal + r.pos * r.px));
+    const equityWoFeePct = eqWoFee.map(v => v / bookSize * 100);
+    const equityPct = rec.map((r, i) => (eqWoFee[i] - r.fee) / bookSize * 100);
+    const px = rec.map(r => r.px);
+
+    const traceEquity = {
+        x, y: equityPct, type: 'scatter', mode: 'lines',
+        line: { color: '#26a69a', width: 1.5 },
+        name: 'Equity'
+    };
+    const traceEquityWoFee = {
+        x, y: equityWoFeePct, type: 'scatter', mode: 'lines',
+        line: { color: '#4db6ac', width: 1, dash: 'dot' },
+        name: 'Equity w/o fee'
+    };
+    const tracePx = {
+        x, y: px, type: 'scatter', mode: 'lines',
+        line: { color: 'rgba(255,255,255,0.15)', width: 1 },
+        name: 'Price', yaxis: 'y2',
+    };
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 60, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date', rangeslider: { visible: true, thickness: 0.05 } },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Cumulative Returns (%)' },
+        yaxis2: { overlaying: 'y', side: 'right', title: 'Price', gridcolor: 'transparent' },
+        legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
+    };
+
+    Plotly.react('chartClassic', [traceEquity, traceEquityWoFee, tracePx], layout, { responsive: true, displayModeBar: false });
+}
+
+function renderAll() {
+    initTimeInputs();
+    renderOverview();
+}
+
+// ============================================================================
+// Render: Trades
+// ============================================================================
+function renderTrades() {
+    const filtered = getFilteredTrades();
+    const totalPages = Math.ceil(filtered.length / tradePageSize);
+    if (tradePage >= totalPages) tradePage = Math.max(0, totalPages - 1);
+
+    const start = tradePage * tradePageSize;
+    const pageItems = filtered.slice(start, start + tradePageSize);
+
+    document.getElementById('tradeCount').textContent =
+        `显示 ${start + 1}-${Math.min(start + tradePageSize, filtered.length)} / ${filtered.length} 笔成交 (共 ${fills.length} 笔)`;
+
+    // Pagination controls
+    let pagHTML = '';
+    if (totalPages > 1) {
+        pagHTML = `<div style="display:flex;gap:8px;align-items:center;padding:8px 0;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="tradePage=0;renderTrades();" ${tradePage===0?'disabled':''}>««</button>
+            <button class="btn btn-sm" onclick="tradePage--;renderTrades();" ${tradePage===0?'disabled':''}>«</button>
+            <span style="font-size:0.8rem;color:var(--text2);">第 ${tradePage+1}/${totalPages} 页</span>
+            <button class="btn btn-sm" onclick="tradePage++;renderTrades();" ${tradePage>=totalPages-1?'disabled':''}>»</button>
+            <button class="btn btn-sm" onclick="tradePage=${totalPages-1};renderTrades();" ${tradePage>=totalPages-1?'disabled':''}>»»</button>
+        </div>`;
+    }
+
+    const tbody = document.querySelector('#tradeTable tbody');
+    tbody.innerHTML = pageItems.map(f => {
+        const side = f.side === 1 ? 'BUY' : 'SELL';
+        const sideCls = f.side === 1 ? 'pnl-pos' : 'pnl-neg';
+        const pnlCls = f.pnl < 0 ? 'pnl-neg' : 'pnl-pos';
+        const rowCls = f.pnl < 0 ? 'losing' : 'winning';
+        const realIdx = f._idx;  // stored index for O(1) lookup
+        return `<tr class="${rowCls}">
+            <td>${new Date(f.ts_ms).toISOString().slice(0,19).replace('T',' ')}</td>
+            <td class="${sideCls}">${side}</td>
+            <td>${(f.ep ?? 0).toFixed(2)}</td>
+            <td>${(f.eq ?? 0).toFixed(3)}</td>
+            <td>${(f.mid ?? 0).toFixed(2)}</td>
+            <td>${(f.spr ?? 0).toFixed(2)}</td>
+            <td>${f.alpha != null ? f.alpha.toFixed(4) : 'N/A'}</td>
+            <td class="${pnlCls}">${f.pnl >= 0 ? '+' : ''}${(f.pnl ?? 0).toFixed(4)}</td>
+            <td class="${pnlCls}">${f.cum_pnl >= 0 ? '+' : ''}${(f.cum_pnl ?? 0).toFixed(4)}</td>
+            <td><button class="btn btn-sm" onclick="inspectTrade(${realIdx})">🔍 分析</button></td>
+        </tr>`;
+    }).join('');
+
+    // Inject pagination above and below the table
+    const wrap = document.getElementById('tradeTableWrap');
+    const tableEl = document.getElementById('tradeTable');
+    // Remove old pagination elements
+    wrap.querySelectorAll('.pagination-row').forEach(el => el.remove());
+    if (pagHTML) {
+        const topPag = document.createElement('div');
+        topPag.className = 'pagination-row';
+        topPag.innerHTML = pagHTML;
+        wrap.insertBefore(topPag, tableEl);
+        const botPag = document.createElement('div');
+        botPag.className = 'pagination-row';
+        botPag.innerHTML = pagHTML;
+        wrap.appendChild(botPag);
+    }
+}
+
+function getFilteredTrades() {
+    // Store original index for O(1) inspectTrade lookup
+    let result = fills.map((f, i) => { f._idx = i; return f; });
+
+    // Apply trade filter
+    if (tradeFilterState.type === 'losing') result = result.filter(f => f.pnl < 0);
+    else if (tradeFilterState.type === 'winning') result = result.filter(f => f.pnl >= 0);
+
+    // Min loss filter
+    if (tradeFilterState.minLoss > 0) {
+        result = result.filter(f => Math.abs(f.pnl) >= tradeFilterState.minLoss);
+    }
+
+    // Time filter
+    if (tradeFilterState.from) result = result.filter(f => f.ts_ms >= tradeFilterState.from);
+    if (tradeFilterState.to) result = result.filter(f => f.ts_ms <= tradeFilterState.to);
+
+    // Sort
+    result.sort((a, b) => {
+        let va, vb;
+        switch (tradeSort.field) {
+            case 'time': va = a.ts_ms; vb = b.ts_ms; break;
+            case 'side': va = a.side; vb = b.side; break;
+            case 'ep': va = a.ep; vb = b.ep; break;
+            case 'eq': va = a.eq; vb = b.eq; break;
+            case 'mid': va = a.mid; vb = b.mid; break;
+            case 'spr': va = a.spr; vb = b.spr; break;
+            case 'alpha': va = a.alpha; vb = b.alpha; break;
+            case 'pnl': va = a.pnl; vb = b.pnl; break;
+            case 'cum_pnl': va = a.cum_pnl; vb = b.cum_pnl; break;
+            default: va = a.ts_ms; vb = b.ts_ms;
+        }
+        if (va == null) return vb == null ? 0 : 1;
+        if (vb == null) return -1;
+        return tradeSort.asc ? (va > vb ? 1 : va < vb ? -1 : 0) : (va < vb ? 1 : va > vb ? -1 : 0);
+    });
+
+    return result;
+}
+
+function applyTradeFilter() {
+    const type = document.getElementById('tradeFilter').value;
+    const minLoss = parseFloat(document.getElementById('minLoss').value) || 0;
+    const fromStr = document.getElementById('tradeTimeFrom').value;
+    const toStr = document.getElementById('tradeTimeTo').value;
+    tradeFilterState = {
+        type,
+        minLoss,
+        from: fromStr ? new Date(fromStr).getTime() : null,
+        to: toStr ? new Date(toStr).getTime() : null,
+    };
+    renderTrades();
+}
+
+function resetTradeFilter() {
+    document.getElementById('tradeFilter').value = 'all';
+    document.getElementById('minLoss').value = '0';
+    document.getElementById('tradeTimeFrom').value = '';
+    document.getElementById('tradeTimeTo').value = '';
+    tradeFilterState = { type: 'all', minLoss: 0, from: null, to: null };
+    renderTrades();
+}
+
+function sortTrades(field) {
+    if (tradeSort.field === field) tradeSort.asc = !tradeSort.asc;
+    else { tradeSort.field = field; tradeSort.asc = true; }
+    renderTrades();
+}
+
+// Inspect a specific trade
+function inspectTrade(idx) {
+    selectedTradeIdx = idx;
+    switchTab('detail');
+    // Set detail time to the trade time
+    const f = fills[idx];
+    document.getElementById('detailTime').value = new Date(f.ts_ms).toISOString().slice(0, 19);
+    renderDetail();
+}
+
+// ============================================================================
+// Render: Detail
+// ============================================================================
+function renderDetail() {
+    const timeStr = document.getElementById('detailTime').value;
+    if (!timeStr) return;
+    const centerMs = new Date(timeStr).getTime();
+    const windowMs = 60_000; // ±60 seconds
+    const fromMs = centerMs - windowMs;
+    const toMs = centerMs + windowMs;
+
+    // Filter data in the window
+    const kWin = klines.filter(k => k.ts_ms >= fromMs && k.ts_ms <= toMs);
+    const sWin = snapshots.filter(s => s.ts_ms >= fromMs && s.ts_ms <= toMs);
+    const fWin = fills.filter(f => f.ts_ms >= fromMs && f.ts_ms <= toMs);
+
+    renderKlineChart(kWin, fWin, centerMs);
+    renderDetailMidChart(sWin, fWin, centerMs);
+    renderDetailAlphaChart(sWin, centerMs);
+    renderDetailTrades(fWin);
+    renderDetailSnapshot(sWin, centerMs);
+}
+
+function updateDetail() {
+    renderDetail();
+}
+
+function renderKlineChart(kl, fillsInWin, centerMs) {
+    if (kl.length === 0) {
+        document.getElementById('chartKline').innerHTML = '<p style="padding:20px;color:var(--text2);">该时间范围内无 K 线数据</p>';
+        return;
+    }
+
+    const candlestick = {
+        x: kl.map(k => new Date(k.ts_ms)),
+        open: kl.map(k => k.o),
+        high: kl.map(k => k.h),
+        low: kl.map(k => k.l),
+        close: kl.map(k => k.c),
+        type: 'candlestick',
+        name: 'Price',
+        increasing: { line: { color: '#26a69a' }, fillcolor: '#26a69a' },
+        decreasing: { line: { color: '#ef5350' }, fillcolor: '#ef5350' },
+    };
+
+    const traces = [candlestick];
+
+    // Add fill markers
+    if (fillsInWin.length > 0) {
+        const buyFills = fillsInWin.filter(f => f.side === 1);
+        const sellFills = fillsInWin.filter(f => f.side === -1);
+        if (buyFills.length > 0) {
+            traces.push({
+                x: buyFills.map(f => new Date(f.ts_ms)),
+                y: buyFills.map(f => f.ep),
+                type: 'scatter', mode: 'markers', name: 'Buy Fill',
+                marker: { symbol: 'triangle-up', color: '#26a69a', size: 10 },
+            });
+        }
+        if (sellFills.length > 0) {
+            traces.push({
+                x: sellFills.map(f => new Date(f.ts_ms)),
+                y: sellFills.map(f => f.ep),
+                type: 'scatter', mode: 'markers', name: 'Sell Fill',
+                marker: { symbol: 'triangle-down', color: '#ef5350', size: 10 },
+            });
+        }
+    }
+
+    // Center line
+    traces.push({
+        x: [new Date(centerMs), new Date(centerMs)],
+        y: [Math.min(...kl.map(k => k.l)), Math.max(...kl.map(k => k.h))],
+        type: 'scatter', mode: 'lines', name: '分析时刻',
+        line: { color: '#ffeb3b', width: 1, dash: 'dash' },
+    });
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 20, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date', rangeslider: { visible: false } },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Price' },
+        legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
+    };
+
+    Plotly.react('chartKline', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+function renderDetailMidChart(sWin, fillsInWin, centerMs) {
+    if (sWin.length === 0) return;
+
+    const traces = [{
+        x: sWin.map(s => new Date(s.ts_ms)),
+        y: sWin.map(s => s.mid),
+        type: 'scatter', mode: 'lines', name: 'Mid Price',
+        line: { color: '#42a5f5', width: 1.5 },
+    }, {
+        x: sWin.map(s => new Date(s.ts_ms)),
+        y: sWin.map(s => s.spr),
+        type: 'scatter', mode: 'lines', name: 'Spread',
+        line: { color: '#ce93d8', width: 1 }, yaxis: 'y2',
+    }];
+
+    // Fill markers
+    const buyF = fillsInWin.filter(f => f.side === 1);
+    const sellF = fillsInWin.filter(f => f.side === -1);
+    if (buyF.length > 0) traces.push({
+        x: buyF.map(f => new Date(f.ts_ms)), y: buyF.map(f => f.mid),
+        type: 'scatter', mode: 'markers', name: 'Buy',
+        marker: { symbol: 'triangle-up', color: '#26a69a', size: 8 },
+    });
+    if (sellF.length > 0) traces.push({
+        x: sellF.map(f => new Date(f.ts_ms)), y: sellF.map(f => f.mid),
+        type: 'scatter', mode: 'markers', name: 'Sell',
+        marker: { symbol: 'triangle-down', color: '#ef5350', size: 8 },
+    });
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 60, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Mid Price' },
+        yaxis2: { overlaying: 'y', side: 'right', title: 'Spread', gridcolor: 'transparent' },
+        legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
+    };
+
+    Plotly.react('chartDetailMid', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+function renderDetailAlphaChart(sWin, centerMs) {
+    if (sWin.length === 0) return;
+
+    const traces = [{
+        x: sWin.map(s => new Date(s.ts_ms)),
+        y: sWin.map(s => s.alpha),
+        type: 'scatter', mode: 'lines', name: 'Alpha',
+        line: { color: '#42a5f5', width: 1.2 },
+        fill: 'tozeroy', fillcolor: 'rgba(66,165,245,0.08)',
+    }];
+
+    if (sWin.some(s => s.vol != null)) {
+        traces.push({
+            x: sWin.filter(s => s.vol != null).map(s => new Date(s.ts_ms)),
+            y: sWin.filter(s => s.vol != null).map(s => s.vol * 100),
+            type: 'scatter', mode: 'lines', name: 'Volatility %',
+            line: { color: '#ff7043', width: 1 }, yaxis: 'y2',
+        });
+    }
+
+    const layout = {
+        paper_bgcolor: '#1a1d27', plot_bgcolor: '#1a1d27',
+        font: { color: '#9ca3af', size: 11 },
+        margin: { l: 60, r: 60, t: 10, b: 40 },
+        xaxis: { gridcolor: '#2a2e3a', type: 'date' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Alpha', side: 'left' },
+        yaxis2: { overlaying: 'y', side: 'right', title: 'Vol %', gridcolor: 'transparent' },
+        legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
+    };
+
+    Plotly.react('chartDetailAlpha', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+function renderDetailTrades(fWin) {
+    if (fWin.length === 0) {
+        document.getElementById('detailTradeTable').innerHTML =
+            '<p style="padding:12px;color:var(--text2);">该时间范围内无成交记录</p>';
+        return;
+    }
+
+    const tableHtml = `<table>
+        <thead><tr>
+            <th>时间</th><th>方向</th><th>成交价</th><th>数量</th><th>中间价</th><th>价差</th><th>Alpha</th><th>PnL</th>
+        </tr></thead>
+        <tbody>${fWin.map(f => {
+            const pnlCls = f.pnl < 0 ? 'pnl-neg' : 'pnl-pos';
+            const side = f.side === 1 ? 'BUY' : 'SELL';
+            return `<tr>
+                <td>${new Date(f.ts_ms).toISOString().slice(11,23)}</td>
+                <td>${side}</td>
+                <td>${f.ep.toFixed(2)}</td>
+                <td>${f.eq.toFixed(3)}</td>
+                <td>${(f.mid ?? 0).toFixed(2)}</td>
+                <td>${(f.spr ?? 0).toFixed(2)}</td>
+                <td>${f.alpha != null ? f.alpha.toFixed(4) : 'N/A'}</td>
+                <td class="${pnlCls}">${f.pnl >= 0 ? '+' : ''}${f.pnl.toFixed(4)}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table>`;
+    document.getElementById('detailTradeTable').innerHTML = `<div class="table-wrap" style="max-height:280px;">${tableHtml}</div>`;
+}
+
+function renderDetailSnapshot(sWin, centerMs) {
+    // Find snapshot closest to centerMs
+    let bestS = null, bestDist = Infinity;
+    for (const s of sWin) {
+        const d = Math.abs(s.ts_ms - centerMs);
+        if (d < bestDist) { bestDist = d; bestS = s; }
+    }
+
+    if (!bestS) {
+        document.getElementById('detailSnapshot').innerHTML =
+            '<p style="color:var(--text2);">该时刻无订单簿快照数据</p>';
+        return;
+    }
+
+    document.getElementById('detailSnapshot').innerHTML = `
+        <table style="width:100%;">
+            <tr><td style="color:var(--text2);">快照时间</td><td>${new Date(bestS.ts_ms).toISOString().slice(0,19).replace('T',' ')}</td></tr>
+            <tr><td style="color:var(--text2);">Best Bid</td><td>${(bestS.bid ?? 0).toFixed(2)}</td></tr>
+            <tr><td style="color:var(--text2);">Best Ask</td><td>${(bestS.ask ?? 0).toFixed(2)}</td></tr>
+            <tr><td style="color:var(--text2);">Mid Price</td><td>${(bestS.mid ?? 0).toFixed(2)}</td></tr>
+            <tr><td style="color:var(--text2);">价差 Spread</td><td>${(bestS.spr ?? 0).toFixed(2)}</td></tr>
+            <tr><td style="color:var(--text2);">Alpha (OBI)</td><td>${bestS.alpha != null ? bestS.alpha.toFixed(6) : 'N/A'}</td></tr>
+            <tr><td style="color:var(--text2);">Raw Imbalance</td><td>${bestS.imba != null ? bestS.imba.toFixed(4) : 'N/A'}</td></tr>
+            <tr><td style="color:var(--text2);">波动率 Vol</td><td>${bestS.vol != null ? (bestS.vol * 100).toFixed(4) + '%' : 'N/A'}</td></tr>
+            <tr><td style="color:var(--text2);">持仓 Position</td><td>${(bestS.pos ?? 0).toFixed(6)}</td></tr>
+            <tr><td style="color:var(--text2);">策略买价 Bid Quote</td><td>${bestS.bp != null ? bestS.bp.toFixed(2) : 'N/A'}</td></tr>
+            <tr><td style="color:var(--text2);">策略卖价 Ask Quote</td><td>${bestS.ap != null ? bestS.ap.toFixed(2) : 'N/A'}</td></tr>
+            <tr><td style="color:var(--text2);">盈亏 Balance</td><td>${(bestS.bal ?? 0).toFixed(4)}</td></tr>
+        </table>
+    `;
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+function showLoading(show) {
+    if (show) loadingEl.classList.remove('hidden');
+    else loadingEl.classList.add('hidden');
+}
+
+function showToast(msg) {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+    if (e.key === '1' && !e.ctrlKey && !e.metaKey) switchTab('overview');
+    if (e.key === '2' && !e.ctrlKey && !e.metaKey) switchTab('trades');
+    if (e.key === '3' && !e.ctrlKey && !e.metaKey) switchTab('detail');
+});
+
+// Handle window resize for Plotly charts
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        Plotly.Plots.resize('chartPnL');
+        Plotly.Plots.resize('chartClassic');
+        Plotly.Plots.resize('chartPosition');
+        Plotly.Plots.resize('chartAlpha');
+        Plotly.Plots.resize('chartVol');
+        Plotly.Plots.resize('chartKline');
+        Plotly.Plots.resize('chartDetailMid');
+        Plotly.Plots.resize('chartDetailAlpha');
+    }, 200);
+});
+
+console.log('OBI Backtest Analysis Tool ready.');
+console.log('Run obi_detailed_strategy.py to generate the JSON data file.');
+console.log('Then load it here for interactive visualization.');
+</script>
+</body>
+</html>
