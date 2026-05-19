@@ -391,9 +391,16 @@ def export_to_json(snapshots, fills, klines, recorder_data, params, output_path,
         (pl.col('bal') + pl.col('pos') * pl.col('px') * 1.0).alias('equity_wo_fee')
     )
     rec_5m_export = []
+    from datetime import timezone as _tz
     for row in rec_5m.iter_rows():
         ts_dt = row[0]
-        ts_ns = int(ts_dt.timestamp() * 1e9) if hasattr(ts_dt, 'timestamp') else int(ts_dt)
+        # pl.from_epoch produces naive UTC datetimes; .timestamp() on naive
+        # datetime treats it as local time, which shifts the result by the
+        # system timezone offset (e.g. +8h on UTC+8).  Force UTC explicitly.
+        if hasattr(ts_dt, 'timestamp'):
+            ts_ns = int(ts_dt.replace(tzinfo=_tz.utc).timestamp() * 1e9)
+        else:
+            ts_ns = int(ts_dt)
         rec_5m_export.append({
             "ts": ts_ns,
             "px": _safe_val(round(float(row[1]), 4)),

@@ -483,24 +483,43 @@ function processData(raw) {
 
 function computeVolatility(windowSec) {
     // Rolling standard deviation of mid-price log returns
-    let sum = 0, sumSq = 0, count = 0;
+    // Skip null/0 mid prices to avoid NaN propagation
+    const returns = [];
     const n = snapshots.length;
     for (let i = 1; i < n; i++) {
-        const ret = Math.log(snapshots[i].mid / snapshots[i - 1].mid);
+        const prev = snapshots[i - 1].mid;
+        const cur = snapshots[i].mid;
+        if (prev == null || cur == null || prev <= 0 || cur <= 0) {
+            returns.push(null);
+        } else {
+            returns.push(Math.log(cur / prev));
+        }
+    }
+
+    let sum = 0, sumSq = 0, count = 0;
+    for (let i = 0; i < returns.length; i++) {
+        const ret = returns[i];
+        if (ret == null) {
+            snapshots[i + 1].vol = null;
+            continue;
+        }
         sum += ret;
         sumSq += ret * ret;
         count++;
-        if (count > windowSec) {
-            const oldest = Math.log(snapshots[i - windowSec].mid / snapshots[i - windowSec - 1].mid);
-            sum -= oldest;
-            sumSq -= oldest * oldest;
-            count--;
-        }
+        // Remove the oldest valid return when the window slides
         if (i >= windowSec) {
+            const oldest = returns[i - windowSec];
+            if (oldest != null) {
+                sum -= oldest;
+                sumSq -= oldest * oldest;
+                count--;
+            }
+        }
+        if (i + 1 >= windowSec && count > 1) {
             const variance = (sumSq - sum * sum / count) / count;
-            snapshots[i].vol = Math.sqrt(Math.max(0, variance)) * Math.sqrt(86400);
+            snapshots[i + 1].vol = Math.sqrt(Math.max(0, variance)) * Math.sqrt(86400);
         } else {
-            snapshots[i].vol = null;
+            snapshots[i + 1].vol = null;
         }
     }
     // First snapshot has no prior price
@@ -511,7 +530,13 @@ function computeVolatility(windowSec) {
 // Time Inputs
 // ============================================================================
 function initTimeInputs() {
-    const fmt = ts => new Date(ts).toISOString().slice(0, 19);
+    // datetime-local expects LOCAL time, but toISOString() returns UTC.
+    // Format manually in local time to avoid the timezone mismatch.
+    const fmt = ts => {
+        const d = new Date(ts);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
     const from = timeRange.from || snapshots[0].ts_ms;
     const to = timeRange.to || snapshots[snapshots.length-1].ts_ms;
     document.getElementById('timeFrom').value = fmt(from);
@@ -599,7 +624,10 @@ function renderStats() {
     const ff = filterByTimeRange(fills);
     if (sf.length === 0) return;
 
-    const totalPnl = ff.length > 0 ? ff[ff.length-1].cum_pnl : 0;
+    // Equity-based PnL: (balance + position * mid_price) change over the range
+    const firstEq = sf[0].bal + sf[0].pos * sf[0].mid;
+    const lastEq = sf[sf.length-1].bal + sf[sf.length-1].pos * sf[sf.length-1].mid;
+    const totalPnl = lastEq - firstEq;
     const winning = ff.filter(f => f.pnl >= 0);
     const losing = ff.filter(f => f.pnl < 0);
     const winRate = ff.length > 0 ? (winning.length / ff.length * 100) : 0;
@@ -636,16 +664,18 @@ function renderPnLChart() {
     // Downsample to 600 points max for performance
     const step = Math.max(1, Math.floor(sf.length / 600));
     const x = [], y = [];
+    // Equity = balance + position * mid_price (mark-to-market PnL)
+    const initEquity = sf[0].bal + sf[0].pos * sf[0].mid;
     for (let i = 0; i < sf.length; i += step) {
         x.push(new Date(sf[i].ts_ms));
-        y.push(sf[i].bal);
+        y.push((sf[i].bal + sf[i].pos * sf[i].mid) - initEquity);
     }
 
     const trace = {
         x, y, type: 'scatter', mode: 'lines',
         line: { color: '#42a5f5', width: 1.5 },
         fill: 'tozeroy', fillcolor: 'rgba(66,165,245,0.08)',
-        name: 'Balance'
+        name: 'Equity PnL'
     };
 
     const layout = {
@@ -653,7 +683,7 @@ function renderPnLChart() {
         font: { color: '#9ca3af', size: 11 },
         margin: { l: 60, r: 20, t: 10, b: 40 },
         xaxis: { gridcolor: '#2a2e3a', type: 'date', rangeslider: { visible: true, thickness: 0.05 } },
-        yaxis: { gridcolor: '#2a2e3a', title: 'Balance' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Equity PnL' },
         showlegend: false,
     };
 
@@ -765,11 +795,12 @@ function renderClassicChart() {
     if (rec.length === 0) return;
 
     const x = rec.map(r => new Date(r.ts_ms));
-    // equity = (equity_wo_fee - fee) / book_size * 100  (matches notebook)
-    const bookSize = 2_500_000;
+    // equity_wo_fee = balance + position * price * contract_size
+    // equity = equity_wo_fee - fee
+    // For percentage returns, use the first equity point as baseline
     const eqWoFee = rec.map(r => r.equity_wo_fee ?? (r.bal + r.pos * r.px));
-    const equityWoFeePct = eqWoFee.map(v => v / bookSize * 100);
-    const equityPct = rec.map((r, i) => (eqWoFee[i] - r.fee) / bookSize * 100);
+    const equityPct = rec.map((r, i) => (eqWoFee[i] - r.fee));
+    const equityWoFeePct = eqWoFee.map(v => v);
     const px = rec.map(r => r.px);
 
     const traceEquity = {
@@ -793,7 +824,7 @@ function renderClassicChart() {
         font: { color: '#9ca3af', size: 11 },
         margin: { l: 60, r: 60, t: 10, b: 40 },
         xaxis: { gridcolor: '#2a2e3a', type: 'date', rangeslider: { visible: true, thickness: 0.05 } },
-        yaxis: { gridcolor: '#2a2e3a', title: 'Cumulative Returns (%)' },
+        yaxis: { gridcolor: '#2a2e3a', title: 'Equity' },
         yaxis2: { overlaying: 'y', side: 'right', title: 'Price', gridcolor: 'transparent' },
         legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(26,29,39,0.8)' },
     };
